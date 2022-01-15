@@ -22,5 +22,6 @@ var findCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(findCmd)
 	findCmd.Flags().StringP("find", "f", "", "Find files by a specified pattern")
+	findCmd.Flags().Bool("remove", false, "Remove a Docker volume")
 	findCmd.Flags().Bool("list", false, "Show Docker volume list")
 }

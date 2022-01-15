@@ -8,9 +8,10 @@ import (
 	"path/filepath"
 	"sync"
 
+	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/filters"
-	"github.com/docker/docker/api/types/volume"
 	"github.com/docker/docker/client"
+	"github.com/manifoldco/promptui"
 	"github.com/olekukonko/tablewriter"
 	"github.com/spf13/cobra"
 )
@@ -31,7 +32,7 @@ func (e *Executer) Execute() error {
 		return err
 	}
 
-	volumes, err := cli.VolumeList(context.Background(), filters.NewArgs())
+	volumeOKBody, err := cli.VolumeList(context.Background(), filters.NewArgs())
 	if err != nil {
 		return err
 	}
@@ -42,8 +43,17 @@ func (e *Executer) Execute() error {
 	}
 
 	if list {
-		e.showList(volumes)
+		e.showList(volumeOKBody.Volumes)
 		return nil
+	}
+
+	remove, err := e.cmd.Flags().GetBool("remove")
+	if err != nil {
+		return err
+	}
+
+	if remove {
+		return e.remove(cli, volumeOKBody.Volumes)
 	}
 
 	pattern, err := e.cmd.Flags().GetString("find")
@@ -51,7 +61,7 @@ func (e *Executer) Execute() error {
 		return err
 	}
 	var wg sync.WaitGroup
-	for _, volume := range volumes.Volumes {
+	for _, volume := range volumeOKBody.Volumes {
 		wg.Add(1)
 		go func(location string) {
 			e.search(location, pattern)
@@ -86,13 +96,46 @@ func (e *Executer) search(location string, name string) {
 	}
 }
 
-func (f *Executer) showList(volumes volume.VolumeListOKBody) {
-	table := tablewriter.NewWriter(f.outStream)
+func (e *Executer) showList(volumes []*types.Volume) {
+	table := tablewriter.NewWriter(e.outStream)
 	table.SetHeader([]string{"Driver", "Name", "Mountpoint"})
 
-	for _, volume := range volumes.Volumes {
+	for _, volume := range volumes {
 		table.Append([]string{volume.Driver, volume.Name, volume.Mountpoint})
 	}
 
 	table.Render()
+}
+
+func (e *Executer) remove(client *client.Client, volumes []*types.Volume) error {
+	items := []string{}
+	idMap := map[string]string{}
+	for _, volume := range volumes {
+		key := fmt.Sprintf("%s - %s", volume.Driver, volume.Name)
+		items = append(items, key)
+		idMap[key] = volume.Name
+	}
+
+	prompt := promptui.Select{
+		Label: "Select volume",
+		Items: items,
+		Size:  20,
+	}
+
+	_, item, err := prompt.Run()
+	if err != nil {
+		if err == promptui.ErrInterrupt {
+			return nil
+		}
+
+		return fmt.Errorf("prompt failed %v", err)
+	}
+
+	id := idMap[item]
+	if err = client.VolumeRemove(context.Background(), id, false); err != nil {
+		return err
+	}
+
+	fmt.Fprintf(e.outStream, "Remove %s\n", item)
+	return nil
 }
