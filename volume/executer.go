@@ -63,7 +63,7 @@ func (e *Executer) Execute() error {
 	return nil
 }
 
-func (f *Executer) search(location string, name string) {
+func (e *Executer) search(location string, name string) {
 	err := filepath.Walk(location, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -75,14 +75,14 @@ func (f *Executer) search(location string, name string) {
 
 		matched, _ := filepath.Match(name, info.Name())
 		if matched {
-			fmt.Fprintf(f.outStream, "%s\n", path)
+			fmt.Fprintf(e.outStream, "%s\n", path)
 		}
 
 		return nil
 	})
 
 	if err != nil {
-		fmt.Fprintf(f.outStream, "%v\n", err)
+		fmt.Fprintf(e.outStream, "%v\n", err)
 	}
 }
 
