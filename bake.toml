@@ -1,0 +1,9 @@
+[default]
+dependencies = ["build"]
+
+[build]
+command = ["go", "build"]
+
+[install]
+command = ["sudo", "cp", "-p", "doss", "/usr/local/bin/"]
+dependencies = ["build"]
