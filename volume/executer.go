@@ -6,6 +6,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 	"sync"
 
 	"github.com/docker/docker/api/types"
@@ -20,6 +22,7 @@ type Executer struct {
 	cmd       *cobra.Command
 	args      []string
 	outStream io.Writer
+	client    *client.Client
 }
 
 func NewExecuter(cmd *cobra.Command, args []string, outStream io.Writer) (*Executer, error) {
@@ -27,12 +30,13 @@ func NewExecuter(cmd *cobra.Command, args []string, outStream io.Writer) (*Execu
 }
 
 func (e *Executer) Execute() error {
-	cli, err := client.NewClientWithOpts(client.WithVersion("1.40"))
+	var err error
+	e.client, err = client.NewClientWithOpts(client.WithVersion("1.40"))
 	if err != nil {
 		return err
 	}
 
-	volumeOKBody, err := cli.VolumeList(context.Background(), filters.NewArgs())
+	volumeOKBody, err := e.client.VolumeList(context.Background(), filters.NewArgs())
 	if err != nil {
 		return err
 	}
@@ -53,7 +57,7 @@ func (e *Executer) Execute() error {
 	}
 
 	if remove {
-		return e.remove(cli, volumeOKBody.Volumes)
+		return e.remove(volumeOKBody.Volumes)
 	}
 
 	pattern, err := e.cmd.Flags().GetString("find")
@@ -107,7 +111,7 @@ func (e *Executer) showList(volumes []*types.Volume) {
 	table.Render()
 }
 
-func (e *Executer) remove(client *client.Client, volumes []*types.Volume) error {
+func (e *Executer) remove(volumes []*types.Volume) error {
 	items := []string{}
 	idMap := map[string]string{}
 	for _, volume := range volumes {
@@ -132,10 +136,37 @@ func (e *Executer) remove(client *client.Client, volumes []*types.Volume) error 
 	}
 
 	id := idMap[item]
-	if err = client.VolumeRemove(context.Background(), id, false); err != nil {
+	if err = e.client.VolumeRemove(context.Background(), id, false); err != nil {
+		if strings.Contains(err.Error(), "volume is in use") {
+			containerNames, newerr := e.getContainerNames(err)
+			if newerr == nil {
+				return fmt.Errorf("%w\n%s", err, containerNames)
+			}
+		}
 		return err
 	}
 
 	fmt.Fprintf(e.outStream, "Remove %s\n", item)
 	return nil
+}
+
+func (e *Executer) getContainerNames(err error) (string, error) {
+	names := ""
+	ids := e.getContainerIDsFromError(err)
+	for _, id := range ids {
+		container, err := e.client.ContainerInspect(context.Background(), id)
+		if err != nil {
+			return "", err
+		}
+		key := fmt.Sprintf("[%s - %s (%s) ]", container.Image, container.Name, container.ID)
+		names += "," + key
+	}
+
+	return names, nil
+}
+
+func (e *Executer) getContainerIDsFromError(err error) []string {
+	re := regexp.MustCompile(`\[(.*)\]`)
+	ids := strings.Trim(string(re.Find([]byte(err.Error()))), "[]")
+	return strings.Split(ids, ",")
 }
