@@ -25,6 +25,12 @@ type Executer struct {
 	client    *client.Client
 }
 
+const (
+	ListFlagName   = "list"
+	RemoveFlagName = "remove"
+	FindFlagName   = "find"
+)
+
 func NewExecuter(cmd *cobra.Command, args []string, outStream io.Writer) (*Executer, error) {
 	return &Executer{cmd: cmd, args: args, outStream: outStream}, nil
 }
@@ -41,7 +47,7 @@ func (e *Executer) Execute() error {
 		return err
 	}
 
-	list, err := e.cmd.Flags().GetBool("list")
+	list, err := e.cmd.Flags().GetBool(ListFlagName)
 	if err != nil {
 		return err
 	}
@@ -51,7 +57,7 @@ func (e *Executer) Execute() error {
 		return nil
 	}
 
-	remove, err := e.cmd.Flags().GetBool("remove")
+	remove, err := e.cmd.Flags().GetBool(RemoveFlagName)
 	if err != nil {
 		return err
 	}
@@ -60,7 +66,7 @@ func (e *Executer) Execute() error {
 		return e.remove(volumeOKBody.Volumes)
 	}
 
-	pattern, err := e.cmd.Flags().GetString("find")
+	pattern, err := e.cmd.Flags().GetString(FindFlagName)
 	if err != nil {
 		return err
 	}
