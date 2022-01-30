@@ -70,6 +70,11 @@ func (e *Executer) Execute() error {
 	if err != nil {
 		return err
 	}
+
+	if len(pattern) == 0 {
+		return e.cmd.Usage()
+	}
+
 	var wg sync.WaitGroup
 	for _, volume := range volumeOKBody.Volumes {
 		wg.Add(1)
