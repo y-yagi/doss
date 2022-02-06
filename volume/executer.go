@@ -10,7 +10,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/client"
 	"github.com/manifoldco/promptui"
@@ -42,19 +41,13 @@ func (e *Executer) Execute() error {
 		return err
 	}
 
-	volumeOKBody, err := e.client.VolumeList(context.Background(), filters.NewArgs())
-	if err != nil {
-		return err
-	}
-
 	list, err := e.cmd.Flags().GetBool(ListFlagName)
 	if err != nil {
 		return err
 	}
 
 	if list {
-		e.showList(volumeOKBody.Volumes)
-		return nil
+		return e.showList()
 	}
 
 	remove, err := e.cmd.Flags().GetBool(RemoveFlagName)
@@ -63,7 +56,7 @@ func (e *Executer) Execute() error {
 	}
 
 	if remove {
-		return e.remove(volumeOKBody.Volumes)
+		return e.remove()
 	}
 
 	pattern, err := e.cmd.Flags().GetString(FindFlagName)
@@ -75,11 +68,20 @@ func (e *Executer) Execute() error {
 		return e.cmd.Usage()
 	}
 
+	return e.search(pattern)
+}
+
+func (e *Executer) search(pattern string) error {
+	volumeOKBody, err := e.client.VolumeList(context.Background(), filters.NewArgs())
+	if err != nil {
+		return err
+	}
+
 	var wg sync.WaitGroup
 	for _, volume := range volumeOKBody.Volumes {
 		wg.Add(1)
 		go func(location string) {
-			e.search(location, pattern)
+			e.walk(location, pattern)
 			wg.Done()
 		}(volume.Mountpoint)
 	}
@@ -88,7 +90,7 @@ func (e *Executer) Execute() error {
 	return nil
 }
 
-func (e *Executer) search(location string, name string) {
+func (e *Executer) walk(location string, name string) {
 	err := filepath.Walk(location, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -111,21 +113,32 @@ func (e *Executer) search(location string, name string) {
 	}
 }
 
-func (e *Executer) showList(volumes []*types.Volume) {
+func (e *Executer) showList() error {
+	volumeOKBody, err := e.client.VolumeList(context.Background(), filters.NewArgs())
+	if err != nil {
+		return err
+	}
+
 	table := tablewriter.NewWriter(e.outStream)
 	table.SetHeader([]string{"Driver", "Name", "Mountpoint"})
 
-	for _, volume := range volumes {
+	for _, volume := range volumeOKBody.Volumes {
 		table.Append([]string{volume.Driver, volume.Name, volume.Mountpoint})
 	}
 
 	table.Render()
+	return nil
 }
 
-func (e *Executer) remove(volumes []*types.Volume) error {
+func (e *Executer) remove() error {
+	volumeOKBody, err := e.client.VolumeList(context.Background(), filters.NewArgs())
+	if err != nil {
+		return err
+	}
+
 	items := []string{}
 	idMap := map[string]string{}
-	for _, volume := range volumes {
+	for _, volume := range volumeOKBody.Volumes {
 		key := fmt.Sprintf("%s - %s", volume.Driver, volume.Name)
 		items = append(items, key)
 		idMap[key] = volume.Name
